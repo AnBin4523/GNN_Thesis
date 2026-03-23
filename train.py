@@ -444,7 +444,73 @@ def train_model(model, model_name, train_df, num_users, num_movies,
 
 
 # ============================================================
-# 7. MAIN
+# 7. HELPER FUNCTIONS
+# ============================================================
+def plot_loss_curves(all_losses, result_dir):
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    if not all_losses:
+        print('No loss data available to plot.')
+        return
+
+    plt.figure(figsize=(10, 5))
+    colors = {'mf_model': '#5b8db8', 'ngcf_model': '#9b59b6', 'lightgcn_model': '#27ae60'}
+    labels = {'mf_model': 'Matrix Factorization', 'ngcf_model': 'NGCF', 'lightgcn_model': 'LightGCN'}
+    for name, losses in all_losses.items():
+        plt.plot(losses, label=labels.get(name, name), color=colors.get(name, None), linewidth=2)
+    plt.xlabel('Epoch')
+    plt.ylabel('BPR Loss')
+    plt.title('Training Loss Curves — All Models')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(f'{result_dir}/loss_curves.png', dpi=150, bbox_inches='tight')
+    plt.close()
+    print('✅ Loss curves saved')
+
+
+def demo_recommend(model, movies_df, idx2movie, train_user_items, test_user_items,
+                   num_movies, demo_user_idx=0, k=10):
+    model.eval()
+    with torch.no_grad():
+        user_tensor = torch.tensor([demo_user_idx], dtype=torch.long).to(device)
+        scores = model.get_scores(user_tensor, num_movies)[0].cpu().numpy()
+
+    seen = train_user_items.get(demo_user_idx, set())
+    for m in seen:
+        if m < num_movies:
+            scores[m] = -np.inf
+
+    top_k_indices = np.argsort(scores)[::-1][:k]
+
+    print(f'\nTop-{k} recommendations for User {demo_user_idx}:')
+    print('-' * 50)
+    for rank, movie_idx in enumerate(top_k_indices, 1):
+        movie_id = idx2movie.get(movie_idx)
+        if movie_id is not None:
+            row = movies_df[movies_df['movie_id'] == movie_id]
+            title = row.iloc[0]['title'] if len(row) > 0 else 'Unknown'
+        else:
+            title = 'Unknown'
+        print(f'  {rank:2d}. {title}')
+
+    test_items = test_user_items.get(demo_user_idx, set())
+    if test_items:
+        print(f'\nGround truth (test set) for User {demo_user_idx}:')
+        for movie_idx in list(test_items)[:5]:
+            movie_id = idx2movie.get(movie_idx)
+            if movie_id is not None:
+                row = movies_df[movies_df['movie_id'] == movie_id]
+                title = row.iloc[0]['title'] if len(row) > 0 else 'Unknown'
+            else:
+                title = 'Unknown'
+            print(f'  - {title}')
+
+
+# ============================================================
+# 8. MAIN
 # ============================================================
 def main():
     # Load data
@@ -463,6 +529,7 @@ def main():
 
     # Train models
     all_results = {}
+    all_losses = {}  # loss tracking (populated only when training from scratch)
 
     # Model 1: Matrix Factorization
     mf_model = MatrixFactorization(num_users, num_movies, EMB_DIM)
@@ -511,6 +578,18 @@ def main():
                    for k, vals in all_results.items()}, f, indent=2)
     print(f'\nResults saved to {RESULT_DIR}/results.json')
 
+    # ── Demo: Top-K Recommendations ──
+    print('\n' + '=' * 60)
+    print('DEMO: Top-10 Recommendations (LightGCN)')
+    print('=' * 60)
+    demo_recommend(
+        lgcn_model, movies, idx2movie,
+        train_user_items, test_user_items,
+        num_movies, demo_user_idx=0, k=10
+    )
+ 
+    # ── Loss Curves ──
+    plot_loss_curves(all_losses, RESULT_DIR)
 
 if __name__ == '__main__':
     main()
