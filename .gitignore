@@ -10,3 +10,6 @@ checkpoints/
 __pycache__/
 *.pyc
 
+.env
+gnn_training/.env
+

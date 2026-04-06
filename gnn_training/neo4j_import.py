@@ -1,11 +1,15 @@
 import pandas as pd
 from neo4j import GraphDatabase
+from dotenv import load_dotenv
+import os
 
-NEO4J_URI      = "bolt://localhost:7687"
-NEO4J_USER     = "neo4j"
-NEO4J_PASSWORD = "anbin4523"
+load_dotenv()
 
-DATA_DIR = "./gnn_thesis/data/ml-1m"
+NEO4J_URI      = os.getenv("NEO4J_URI")
+NEO4J_USER     = os.getenv("NEO4J_USER")
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
+
+DATA_DIR = "./gnn_training/data/ml-1m"
 
 # Age group mapping từ ML-1M
 AGE_MAP = {
