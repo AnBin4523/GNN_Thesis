@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+neo4j
+mysql-connector-python
+python-dotenv
+torch
+torch-geometric
+pandas
+numpy
+matplotlib
