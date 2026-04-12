@@ -1,9 +1,3 @@
-"""
-Intelligent Movie Recommendation System using GNN
-Thesis — Ngo Le Thien An | ITITWE21117
-Run: python train.py
-"""
-
 import os
 import zipfile
 import urllib.request
@@ -33,7 +27,7 @@ except ImportError:
 # ============================================================
 # 1. PATHS & HYPERPARAMETERS
 # ============================================================
-BASE_DIR   = './gnn_thesis'
+BASE_DIR   = './gnn_training'
 DATA_DIR   = f'{BASE_DIR}/data/ml-1m'
 CKPT_DIR   = f'{BASE_DIR}/checkpoints'
 RESULT_DIR = f'{BASE_DIR}/results'
@@ -44,7 +38,7 @@ for d in [DATA_DIR, CKPT_DIR, RESULT_DIR]:
 EMB_DIM    = 64
 BATCH_SIZE = 2048
 REG_LAMBDA = 1e-4
-PATIENCE   = 5
+PATIENCE   = 10
 LR         = 1e-3
 
 # ============================================================
@@ -339,7 +333,7 @@ def train_model(model, model_name, train_df, num_users, num_movies,
         print(f'{model_name} Results:')
         for metric, value in results.items():
             print(f'   {metric}: {value:.4f}')
-        return model, results
+        return model, results, []  # no losses when loading checkpoint
 
     # Train from scratch
     model      = model.to(device)
@@ -347,6 +341,7 @@ def train_model(model, model_name, train_df, num_users, num_movies,
     best_ndcg  = 0
     no_improve = 0
     best_epoch = 0
+    epoch_losses = []  # loss tracking
 
     if edge_index is not None:
         model.set_edge_index(edge_index)
@@ -404,6 +399,7 @@ def train_model(model, model_name, train_df, num_users, num_movies,
                 all_embs = model.forward(edge_index)
 
         avg_loss = epoch_loss / len(loader)
+        epoch_losses.append(avg_loss)  # track loss
 
         # Evaluate every 5 epochs
         if (epoch + 1) % 5 == 0:
@@ -440,7 +436,7 @@ def train_model(model, model_name, train_df, num_users, num_movies,
     print(f'{model_name} Results:')
     for metric, value in results.items():
         print(f'   {metric}: {value:.4f}')
-    return model, results
+    return model, results, epoch_losses
 
 
 # ============================================================
@@ -528,37 +524,44 @@ def main():
     print(f'\nGraph: {num_users + num_movies:,} nodes, {edge_index.shape[1]:,} edges')
 
     # Train models
+    # All models use same conditions: max_epochs=500, early stopping patience=10
     all_results = {}
-    all_losses = {}  # loss tracking (populated only when training from scratch)
+    all_losses  = {}
 
     # Model 1: Matrix Factorization
     mf_model = MatrixFactorization(num_users, num_movies, EMB_DIM)
-    mf_model, mf_results = train_model(
+    mf_model, mf_results, mf_losses = train_model(
         mf_model, 'mf_model', train_df, num_users, num_movies,
         train_user_items, test_user_items,
-        max_epochs=100, batch_size=BATCH_SIZE, lr=LR
+        max_epochs=500, batch_size=BATCH_SIZE, lr=LR
     )
     all_results['Matrix Factorization'] = mf_results
+    if mf_losses:
+        all_losses['mf_model'] = mf_losses
 
     # Model 2: NGCF
     ngcf_model = NGCF(num_users, num_movies, EMB_DIM, n_layers=3)
-    ngcf_model, ngcf_results = train_model(
+    ngcf_model, ngcf_results, ngcf_losses = train_model(
         ngcf_model, 'ngcf_model', train_df, num_users, num_movies,
         train_user_items, test_user_items,
-        edge_index=edge_index, max_epochs=100,
+        edge_index=edge_index, max_epochs=500,
         batch_size=BATCH_SIZE, lr=LR
     )
     all_results['NGCF'] = ngcf_results
+    if ngcf_losses:
+        all_losses['ngcf_model'] = ngcf_losses
 
     # Model 3: LightGCN
     lgcn_model = LightGCN(num_users, num_movies, EMB_DIM, n_layers=3)
-    lgcn_model, lgcn_results = train_model(
+    lgcn_model, lgcn_results, lgcn_losses = train_model(
         lgcn_model, 'lightgcn_model', train_df, num_users, num_movies,
         train_user_items, test_user_items,
-        edge_index=edge_index, max_epochs=300,
-        batch_size=4096, lr=LR
+        edge_index=edge_index, max_epochs=500,
+        batch_size=BATCH_SIZE, lr=LR
     )
     all_results['LightGCN'] = lgcn_results
+    if lgcn_losses:
+        all_losses['lightgcn_model'] = lgcn_losses
 
     # Print final comparison table
     print('\n' + '=' * 60)
