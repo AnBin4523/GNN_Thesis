@@ -464,7 +464,7 @@ def plot_loss_curves(all_losses, result_dir):
     plt.tight_layout()
     plt.savefig(f'{result_dir}/loss_curves.png', dpi=150, bbox_inches='tight')
     plt.close()
-    print('✅ Loss curves saved')
+    print('Loss curves saved')
 
 
 def demo_recommend(model, movies_df, idx2movie, train_user_items, test_user_items,
