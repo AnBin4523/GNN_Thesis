@@ -7,18 +7,18 @@ from typing import Optional
 # ============================================================
 
 class MovieBase(BaseModel):
-    movie_id   : int
-    title      : str
-    genres     : Optional[str | list[str]] = None
+    movie_id : int
+    title    : str
+    genres   : Optional[str | list[str]] = None
 
 
 class MovieDetail(MovieBase):
-    year_published : Optional[int]    = None
-    poster_path    : Optional[str]    = None
-    plot           : Optional[str]    = None
-    actors         : Optional[str]    = None
-    directors      : Optional[str]    = None
-    tmdb_id        : Optional[int]    = None
+    year_published : Optional[int] = None
+    poster_path    : Optional[str] = None
+    plot           : Optional[str] = None
+    actors         : Optional[str] = None
+    directors      : Optional[str] = None
+    tmdb_id        : Optional[int] = None
 
 
 # ============================================================
@@ -26,27 +26,27 @@ class MovieDetail(MovieBase):
 # ============================================================
 
 class RecommendItem(BaseModel):
-    rank       : int
-    movie_id   : int
-    title      : Optional[str]    = None
-    genres     : Optional[list[str]] = None
-    poster_path: Optional[str]    = None
-    score      : float
+    rank        : int
+    movie_id    : int
+    title       : Optional[str]       = None
+    genres      : Optional[list[str]] = None
+    poster_path : Optional[str]       = None
+    score       : float
 
 
 class RecommendResponse(BaseModel):
-    model      : str
-    user_idx   : int
-    k          : int
-    items      : list[RecommendItem]
+    model    : str
+    user_idx : int
+    k        : int
+    items    : list[RecommendItem]
 
 
 class CompareResponse(BaseModel):
-    user_idx   : int
-    k          : int
-    mf         : list[RecommendItem]
-    ngcf       : list[RecommendItem]
-    lightgcn   : list[RecommendItem]
+    user_idx : int
+    k        : int
+    mf       : list[RecommendItem]
+    ngcf     : list[RecommendItem]
+    lightgcn : list[RecommendItem]
 
 
 # ============================================================
@@ -73,7 +73,7 @@ class RegisterRequest(BaseModel):
     email            : str
     password         : str
     display_name     : str
-    preferred_genres : list[str]   # e.g. ["Action", "Comedy"]
+    preferred_genres : list[str]
 
 
 class LoginRequest(BaseModel):
@@ -82,10 +82,11 @@ class LoginRequest(BaseModel):
 
 
 class LoginResponse(BaseModel):
-    user_id      : int
-    display_name : str
-    ml1m_user_id : int
-    token        : str
+    user_id          : int
+    display_name     : str
+    ml1m_user_id     : int
+    preferred_genres : Optional[str] = None  # empty = not onboarded yet
+    token            : str
 
 
 # ============================================================

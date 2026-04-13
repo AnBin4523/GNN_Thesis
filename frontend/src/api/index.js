@@ -1,0 +1,78 @@
+import axios from "axios";
+
+const API_BASE = "http://localhost:8000";
+
+const api = axios.create({
+  baseURL: API_BASE,
+  timeout: 30000,
+});
+
+// ============================================================
+// AUTH
+// ============================================================
+export const authAPI = {
+  register: (data) => api.post("/auth/register", data),
+  login: (data) => api.post("/auth/login", data),
+  updateGenres: (userId, genres) =>
+    api.put("/auth/update-genres", {
+      user_id: userId,
+      preferred_genres: genres,
+    }),
+};
+
+// ============================================================
+// RECOMMENDATIONS
+// ============================================================
+export const recommendAPI = {
+  getRecommend: (userIdx, model = "lightgcn", k = 10) =>
+    api.get(`/recommend/${userIdx}`, { params: { model, k } }),
+  getCompare: (userIdx, k = 10) =>
+    api.get(`/recommend/compare/${userIdx}`, { params: { k } }),
+};
+
+// ============================================================
+// USERS
+// ============================================================
+export const userAPI = {
+  getUserInfo: (ml1mUserId) => api.get(`/users/${ml1mUserId}`),
+  getUserRated: (ml1mUserId, limit = 20) =>
+    api.get(`/users/${ml1mUserId}/rated`, { params: { limit } }),
+};
+
+// ============================================================
+// MOVIES
+// ============================================================
+export const movieAPI = {
+  getMovie: (movieId) => api.get(`/movies/${movieId}`),
+  listMovies: (genre, limit = 20, offset = 0) =>
+    api.get("/movies", { params: { genre, limit, offset } }),
+  searchMovies: (q, limit = 20) =>
+    api.get("/movies/search", { params: { q, limit } }),
+};
+
+// ============================================================
+// GRAPH
+// ============================================================
+export const graphAPI = {
+  getSubgraph: (ml1mUserId, movieLimit = 10) =>
+    api.get(`/graph/user/${ml1mUserId}`, {
+      params: { movie_limit: movieLimit },
+    }),
+  getStats: () => api.get("/graph/stats"),
+};
+
+// ============================================================
+// METRICS
+// ============================================================
+export const metricsAPI = {
+  getMetrics: () => api.get("/metrics"),
+};
+
+// ============================================================
+// HEALTH
+// ============================================================
+export const healthAPI = {
+  check: () => api.get("/health"),
+};
+
+export default api;
