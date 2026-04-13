@@ -250,15 +250,6 @@ export default function Navbar({ activeGenre, onGenreChange }) {
                 >
                   {user?.display_name}
                 </div>
-                <div
-                  style={{
-                    color: "#475569",
-                    fontSize: "11px",
-                    marginTop: "2px",
-                  }}
-                >
-                  ML-1M User #{user?.ml1m_user_id}
-                </div>
               </div>
               <Link
                 to="/profile"

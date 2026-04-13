@@ -19,7 +19,7 @@ class MovieDetail(MovieBase):
     actors         : Optional[str] = None
     directors      : Optional[str] = None
     tmdb_id        : Optional[int] = None
-
+    trailer_key    : Optional[str] = None
 
 # ============================================================
 # RECOMMENDATION SCHEMAS

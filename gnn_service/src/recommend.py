@@ -11,15 +11,6 @@ def get_topk(
 ) -> list[dict]:
     """
     Generate Top-K movie recommendations for a given ML-1M user index.
-
-    Args:
-        model_name   : "mf" | "ngcf" | "lightgcn"
-        user_idx     : internal user index (0-based, from user2idx)
-        k            : number of recommendations
-        exclude_seen : if True, remove movies the user already rated
-
-    Returns:
-        List of dicts: [{"rank": 1, "movie_idx": int, "movie_id": int, "score": float}, ...]
     """
     registry = get_registry()
     model    = registry.get(model_name)
@@ -30,7 +21,6 @@ def get_topk(
     with torch.no_grad():
         scores = model.get_scores(user_tensor, registry.num_movies)[0].cpu().numpy()
 
-    # Mask movies already seen in training set
     if exclude_seen:
         for movie_idx in registry.train_user_items.get(user_idx, set()):
             if movie_idx < registry.num_movies:
@@ -57,14 +47,7 @@ def get_topk_all_models(
     exclude_seen: bool = True,
 ) -> dict[str, list[dict]]:
     """
-    Run Top-K for all 3 models at once (used by /recommend/compare endpoint).
-
-    Returns:
-        {
-            "mf"       : [...],
-            "ngcf"     : [...],
-            "lightgcn" : [...],
-        }
+    Run Top-K for all 3 models at once.
     """
     return {
         model_name: get_topk(model_name, user_idx, k, exclude_seen)
@@ -75,8 +58,11 @@ def get_topk_all_models(
 def map_genre_to_user(preferred_genres: list[str]) -> int:
     """
     Map a web user's preferred genres to the closest ML-1M user index.
-    Strategy: find the ML-1M user whose training movies have the highest
-    genre overlap with the preferred genres.
+
+    Strategy: compute genre overlap ratio per user — normalize by number
+    of movies rated to avoid bias toward heavy raters.
+
+    Score = (genre overlap count) / (total movies rated by user)
 
     Args:
         preferred_genres : e.g. ["Action", "Comedy"]
@@ -86,6 +72,9 @@ def map_genre_to_user(preferred_genres: list[str]) -> int:
     """
     import pandas as pd
     from pathlib import Path
+
+    if not preferred_genres:
+        return 0
 
     registry = get_registry()
     DATA_DIR = Path(__file__).resolve().parent.parent.parent / "gnn_training" / "data" / "ml-1m"
@@ -107,13 +96,21 @@ def map_genre_to_user(preferred_genres: list[str]) -> int:
     preferred_set = set(g.strip() for g in preferred_genres)
 
     best_user_idx = 0
-    best_score    = -1
+    best_score    = -1.0
 
     for user_idx, movie_set in registry.train_user_items.items():
-        score = sum(
-            len(movie_genre_map.get(m, set()) & preferred_set)
-            for m in movie_set
+        if len(movie_set) == 0:
+            continue
+
+        # Count how many movies match preferred genres
+        overlap = sum(
+            1 for m in movie_set
+            if movie_genre_map.get(m, set()) & preferred_set
         )
+
+        # Normalize by total movies rated → genre ratio (0.0 to 1.0)
+        score = overlap / len(movie_set)
+
         if score > best_score:
             best_score    = score
             best_user_idx = user_idx

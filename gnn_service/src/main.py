@@ -182,6 +182,7 @@ def get_movie(movie_id: int):
         actors         = mysql.get("actors"),
         directors      = mysql.get("directors"),
         tmdb_id        = mysql.get("tmdb_id"),
+        trailer_key    = mysql.get("trailer_key"), 
     )
 
 
