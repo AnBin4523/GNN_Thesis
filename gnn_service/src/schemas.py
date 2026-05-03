@@ -26,12 +26,14 @@ class MovieDetail(MovieBase):
 # ============================================================
 
 class RecommendItem(BaseModel):
-    rank        : int
-    movie_id    : int
-    title       : Optional[str]       = None
-    genres      : Optional[list[str]] = None
-    poster_path : Optional[str]       = None
-    score       : float
+    rank          : int
+    movie_id      : int
+    title         : Optional[str]       = None
+    genres        : Optional[list[str]] = None
+    poster_path   : Optional[str]       = None
+    score         : float
+    avg_rating    : Optional[float]     = None
+    total_ratings : Optional[int]       = 0
 
 
 class RecommendResponse(BaseModel):

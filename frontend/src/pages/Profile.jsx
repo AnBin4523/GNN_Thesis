@@ -4,6 +4,8 @@ import Navbar from "../components/common/Navbar";
 import { useAuth } from "../context/AuthContext";
 import { userAPI, authAPI } from "../api/index";
 
+const TMDB_IMG = "https://image.tmdb.org/t/p/w92";
+
 const ALL_GENRES = [
   "Action",
   "Adventure",
@@ -37,6 +39,8 @@ export default function Profile() {
   const [savingGenres, setSavingGenres] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [currentMl1mId, setCurrentMl1mId] = useState(null);
+  const [webRatings, setWebRatings] = useState([]);
+  const [loadingWebRatings, setLoadingWebRatings] = useState(false);
 
   const preferredGenres = user?.preferred_genres
     ? user.preferred_genres
@@ -80,10 +84,34 @@ export default function Profile() {
   };
 
   useEffect(() => {
-    if (user?.ml1m_user_id) {
+    if (user?.ml1m_user_id != null && user.ml1m_user_id > 0) {
       fetchMl1mData(user.ml1m_user_id);
     }
-  }, []);
+  }, [user?.ml1m_user_id]);
+
+  // Fetch web user's own rating history
+  useEffect(() => {
+    if (!user?.user_id) return;
+    const fetchWebRatings = async () => {
+      setLoadingWebRatings(true);
+      try {
+        // GET /users/web/{user_id}/ratings — fallback: fetch per movie not ideal
+        // Use the ratings endpoint indirectly via movie list
+        const res = await fetch(
+          `http://localhost:8000/users/web/${user.user_id}/ratings`,
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setWebRatings(data);
+        }
+      } catch {
+        // endpoint might not exist yet, ignore
+      } finally {
+        setLoadingWebRatings(false);
+      }
+    };
+    fetchWebRatings();
+  }, [user?.user_id]);
 
   const handleEditGenres = () => {
     setSelectedGenres([...preferredGenres]);
@@ -677,6 +705,180 @@ export default function Profile() {
                   </div>
                 );
               })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Rating History ── */}
+      <div
+        style={{
+          maxWidth: "900px",
+          margin: "1.5rem auto 0",
+          padding: "0 1.5rem 2rem",
+        }}
+      >
+        <div
+          style={{
+            background: "rgba(15,23,42,0.85)",
+            border: "1px solid rgba(30,41,59,0.8)",
+            borderRadius: "12px",
+            padding: "1.25rem",
+          }}
+        >
+          {/* Header */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              marginBottom: "1rem",
+            }}
+          >
+            <div
+              style={{
+                width: "3px",
+                height: "20px",
+                background: "#f59e0b",
+                borderRadius: "2px",
+              }}
+            />
+            <h2
+              style={{
+                color: "#f1f5f9",
+                fontSize: "15px",
+                fontWeight: "600",
+                margin: 0,
+              }}
+            >
+              My Ratings
+            </h2>
+            {webRatings.length > 0 && (
+              <span style={{ color: "#475569", fontSize: "12px" }}>
+                {webRatings.length} movies rated
+              </span>
+            )}
+          </div>
+
+          {loadingWebRatings ? (
+            <div style={{ color: "#475569", fontSize: "13px" }}>Loading...</div>
+          ) : webRatings.length === 0 ? (
+            <div
+              style={{
+                color: "#334155",
+                fontSize: "13px",
+                textAlign: "center",
+                padding: "1.5rem 0",
+              }}
+            >
+              You haven't rated any movies yet. Rate movies on their detail
+              page.
+            </div>
+          ) : (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.6rem",
+              }}
+            >
+              {webRatings.map((item) => (
+                <div
+                  key={item.movie_id}
+                  onClick={() => navigate(`/movies/${item.movie_id}`)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.75rem",
+                    padding: "0.5rem",
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    transition: "background 0.15s",
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.background = "rgba(30,41,59,0.6)")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.background = "transparent")
+                  }
+                >
+                  {/* Poster thumbnail */}
+                  <div
+                    style={{
+                      width: "36px",
+                      height: "54px",
+                      flexShrink: 0,
+                      borderRadius: "4px",
+                      overflow: "hidden",
+                      background: "#1e293b",
+                    }}
+                  >
+                    {item.poster_path ? (
+                      <img
+                        src={`${TMDB_IMG}${item.poster_path}`}
+                        alt={item.title}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                        }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          background: "#1e293b",
+                        }}
+                      />
+                    )}
+                  </div>
+
+                  {/* Title + genres */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        color: "#f1f5f9",
+                        fontSize: "13px",
+                        fontWeight: "500",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {item.title}
+                    </div>
+                    {item.genres && (
+                      <div
+                        style={{
+                          color: "#475569",
+                          fontSize: "11px",
+                          marginTop: "2px",
+                        }}
+                      >
+                        {item.genres.split(",").slice(0, 2).join(", ")}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Star rating */}
+                  <div style={{ display: "flex", gap: "2px", flexShrink: 0 }}>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <svg
+                        key={star}
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill={star <= item.rating ? "#f59e0b" : "none"}
+                        stroke={star <= item.rating ? "#f59e0b" : "#334155"}
+                        strokeWidth="1.5"
+                      >
+                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                      </svg>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>

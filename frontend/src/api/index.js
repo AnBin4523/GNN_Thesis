@@ -44,8 +44,11 @@ export const userAPI = {
 // ============================================================
 export const movieAPI = {
   getMovie: (movieId) => api.get(`/movies/${movieId}`),
-  listMovies: (genre, limit = 20, offset = 0) =>
-    api.get("/movies", { params: { genre, limit, offset } }),
+  listMovies: (genre, limit = 20, offset = 0) => {
+    const params = { limit, offset };
+    if (genre) params.genre = genre;
+    return api.get("/movies", { params });
+  },
   searchMovies: (q, limit = 20) =>
     api.get("/movies/search", { params: { q, limit } }),
 };
@@ -66,6 +69,18 @@ export const graphAPI = {
 // ============================================================
 export const metricsAPI = {
   getMetrics: () => api.get("/metrics"),
+};
+
+// ============================================================
+// RATINGS
+// ============================================================
+export const ratingAPI = {
+  getRating: (movieId, userId) =>
+    api.get(`/ratings/${movieId}`, { params: { user_id: userId } }),
+  rateMovie: (movieId, userId, rating) =>
+    api.put(`/ratings/${movieId}`, { rating }, { params: { user_id: userId } }),
+  unrateMovie: (movieId, userId) =>
+    api.delete(`/ratings/${movieId}`, { params: { user_id: userId } }),
 };
 
 // ============================================================

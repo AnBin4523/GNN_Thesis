@@ -36,6 +36,17 @@ export default function Navbar({ activeGenre, onGenreChange }) {
   const location = useLocation();
   const [showUser, setShowUser] = useState(false);
 
+  const isHome = location.pathname === "/";
+
+  const handleGenreClick = (genre) => {
+    if (isHome && onGenreChange) {
+      onGenreChange(genre);
+    } else {
+      // Navigate to home with genre as query param
+      navigate(genre ? `/?genre=${encodeURIComponent(genre)}` : "/");
+    }
+  };
+
   const handleLogout = () => {
     logout();
     navigate("/login");
@@ -304,8 +315,6 @@ export default function Navbar({ activeGenre, onGenreChange }) {
       <div
         style={{
           borderTop: "1px solid rgba(30,41,59,0.8)",
-          overflowX: "auto",
-          scrollbarWidth: "none",
         }}
       >
         <div
@@ -315,10 +324,10 @@ export default function Navbar({ activeGenre, onGenreChange }) {
             padding: "0.6rem 1.5rem",
           }}
         >
-          <div style={{ display: "flex", gap: "0.5rem", width: "max-content" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
             {/* All */}
             <button
-              onClick={() => onGenreChange && onGenreChange(null)}
+              onClick={() => handleGenreClick(null)}
               style={{
                 padding: "5px 14px",
                 borderRadius: "20px",
@@ -344,7 +353,7 @@ export default function Navbar({ activeGenre, onGenreChange }) {
               return (
                 <button
                   key={genre}
-                  onClick={() => onGenreChange && onGenreChange(genre)}
+                  onClick={() => handleGenreClick(genre)}
                   style={{
                     padding: "5px 14px",
                     borderRadius: "20px",

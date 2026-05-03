@@ -1,17 +1,77 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Navbar from "../components/common/Navbar";
-import { movieAPI } from "../api/index";
+import { movieAPI, ratingAPI } from "../api/index";
+import { useAuth } from "../context/AuthContext";
 
 const TMDB_IMG = "https://image.tmdb.org/t/p/w500";
+
+// ── Star Rating Component ──
+function StarRating({ userRating, onRate, disabled }) {
+  const [hovered, setHovered] = useState(0);
+
+  return (
+    <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+      {[1, 2, 3, 4, 5].map((star) => {
+        const filled = star <= (hovered || userRating || 0);
+        return (
+          <svg
+            key={star}
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill={filled ? "#f59e0b" : "none"}
+            stroke={filled ? "#f59e0b" : "#475569"}
+            strokeWidth="1.5"
+            style={{
+              cursor: disabled ? "default" : "pointer",
+              transition: "all 0.1s",
+            }}
+            onMouseEnter={() => !disabled && setHovered(star)}
+            onMouseLeave={() => !disabled && setHovered(0)}
+            onClick={() => !disabled && onRate(star)}
+          >
+            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+          </svg>
+        );
+      })}
+      {userRating > 0 && !disabled && (
+        <button
+          onClick={() => onRate(0)}
+          style={{
+            marginLeft: "6px",
+            background: "transparent",
+            border: "none",
+            color: "#475569",
+            fontSize: "11px",
+            cursor: "pointer",
+            padding: "0",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "#f87171")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "#475569")}
+        >
+          remove
+        </button>
+      )}
+    </div>
+  );
+}
 
 export default function MovieDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [movie, setMovie] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showTrailer, setShowTrailer] = useState(false);
+
+  // Rating state
+  const [userRating, setUserRating] = useState(0);
+  const [avgRating, setAvgRating] = useState(null);
+  const [totalRatings, setTotalRatings] = useState(0);
+  const [ratingLoading, setRatingLoading] = useState(false);
+  const [mappingUpdated, setMappingUpdated] = useState(false);
 
   useEffect(() => {
     const fetchMovie = async () => {
@@ -27,6 +87,92 @@ export default function MovieDetail() {
     };
     fetchMovie();
   }, [id]);
+
+  // Fetch rating info when movie + user loaded
+  useEffect(() => {
+    if (!movie || !user?.user_id) return;
+    const fetchRating = async () => {
+      try {
+        const res = await ratingAPI.getRating(movie.movie_id, user.user_id);
+        setUserRating(res.data.user_rating || 0);
+        setAvgRating(res.data.avg_rating);
+        setTotalRatings(res.data.total_ratings);
+      } catch {
+        // ignore — not rated yet
+      }
+    };
+    fetchRating();
+  }, [movie, user]);
+
+  const handleRate = async (star) => {
+    if (!user?.user_id) return;
+
+    // Optimistic update — cập nhật UI ngay, không chờ API
+    const prevRating = userRating;
+    const prevAvg = avgRating;
+    const prevTotal = totalRatings;
+
+    setUserRating(star);
+    if (star === 0) {
+      // Remove: tính lại avg tạm thời
+      if (prevTotal > 1) {
+        setAvgRating(
+          parseFloat(
+            (((prevAvg || 0) * prevTotal - prevRating) / (prevTotal - 1)).toFixed(1),
+          ),
+        );
+      } else {
+        setAvgRating(null);
+      }
+      setTotalRatings((prev) => Math.max(0, prev - 1));
+    } else if (!prevRating) {
+      // First rating
+      setAvgRating(
+        parseFloat(
+          (((prevAvg || 0) * prevTotal + star) / (prevTotal + 1)).toFixed(1),
+        ),
+      );
+      setTotalRatings((prev) => prev + 1);
+    } else {
+      // Update existing rating
+      setAvgRating(
+        parseFloat(
+          (((prevAvg || 0) * prevTotal - prevRating + star) / prevTotal).toFixed(1),
+        ),
+      );
+    }
+
+    setRatingLoading(true);
+    setMappingUpdated(false);
+    try {
+      if (star === 0) {
+        await ratingAPI.unrateMovie(movie.movie_id, user.user_id);
+      } else {
+        const res = await ratingAPI.rateMovie(movie.movie_id, user.user_id, star);
+        if (res.data.mapping_source === "rating") {
+          setMappingUpdated(true);
+          setTimeout(() => setMappingUpdated(false), 4000);
+        }
+      }
+    } catch {
+      // rateMovie có thể lỗi 500 do side-effect (vd: mapping) nhưng rating vẫn đã
+      // được lưu vào DB — không revert ngay, để getRating bên dưới xác nhận.
+    } finally {
+      // Luôn sync lại từ server để hiển thị số chính xác
+      try {
+        const statsRes = await ratingAPI.getRating(movie.movie_id, user.user_id);
+        setUserRating(statsRes.data.user_rating || 0);
+        setAvgRating(statsRes.data.avg_rating);
+        setTotalRatings(statsRes.data.total_ratings);
+      } catch {
+        // getRating cũng lỗi → revert optimistic update
+        setUserRating(prevRating);
+        setAvgRating(prevAvg);
+        setTotalRatings(prevTotal);
+      }
+      setRatingLoading(false);
+    }
+  };
 
   if (loading)
     return (
@@ -387,6 +533,99 @@ export default function MovieDetail() {
                 ))}
               </div>
             )}
+
+            {/* ── Rating section ── */}
+            <div
+              style={{
+                background: "rgba(15,23,42,0.85)",
+                border: "1px solid rgba(30,41,59,0.8)",
+                borderRadius: "10px",
+                padding: "1rem 1.25rem",
+                marginBottom: "1.5rem",
+              }}
+            >
+              {/* Community stats */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "1rem",
+                  marginBottom: "0.75rem",
+                }}
+              >
+                <div
+                  style={{ display: "flex", alignItems: "center", gap: "6px" }}
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="#f59e0b"
+                    stroke="#f59e0b"
+                    strokeWidth="1.5"
+                  >
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                  </svg>
+                  <span
+                    style={{
+                      color: "#f1f5f9",
+                      fontSize: "15px",
+                      fontWeight: "600",
+                    }}
+                  >
+                    {avgRating ? avgRating.toFixed(1) : "—"}
+                  </span>
+                  <span style={{ color: "#475569", fontSize: "12px" }}>
+                    {totalRatings > 0
+                      ? `(${totalRatings} rating${totalRatings > 1 ? "s" : ""})`
+                      : "No ratings yet"}
+                  </span>
+                </div>
+              </div>
+
+              {/* User rating */}
+              {user ? (
+                <div>
+                  <div
+                    style={{
+                      color: "#64748b",
+                      fontSize: "11px",
+                      fontWeight: "600",
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
+                      marginBottom: "0.5rem",
+                    }}
+                  >
+                    Your Rating
+                  </div>
+                  <StarRating
+                    userRating={userRating}
+                    onRate={handleRate}
+                    disabled={ratingLoading}
+                  />
+                  {/* Mapping updated notice */}
+                  {mappingUpdated && (
+                    <div
+                      style={{
+                        marginTop: "8px",
+                        fontSize: "11px",
+                        color: "#14b8a6",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "5px",
+                      }}
+                    >
+                      <span>✓</span>
+                      Surrogate user updated based on your rating history
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ color: "#475569", fontSize: "12px" }}>
+                  Sign in to rate this movie
+                </div>
+              )}
+            </div>
 
             {/* Plot */}
             {movie.plot && (

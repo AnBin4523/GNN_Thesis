@@ -16,9 +16,12 @@ from neo4j_client import (
 )
 from mysql_client import (
     get_movie_metadata, get_movies_metadata_batch,
-    get_web_user_by_email, get_web_user_by_id,
+    get_web_user_by_email,
     create_web_user, update_ml1m_user_id,
     search_movies, get_movies_by_genre, _get_conn,
+    upsert_rating, delete_rating,
+    get_user_rating, get_movie_rating_stats,
+    get_user_rated_movies as get_web_user_rated_movies,
 )
 from schemas import (
     RecommendItem, RecommendResponse, CompareResponse,
@@ -71,18 +74,27 @@ def _enrich_recommendations(items: list[dict]) -> list[RecommendItem]:
     movie_ids  = [item["movie_id"] for item in items if item["movie_id"]]
     neo4j_info = get_movies_batch(movie_ids)
     mysql_info = get_movies_metadata_batch(movie_ids)
+
+    # Batch fetch rating stats
+    rating_stats = {}
+    for mid in movie_ids:
+        rating_stats[mid] = get_movie_rating_stats(mid)
+
     result = []
     for item in items:
         mid   = item["movie_id"]
         neo4j = neo4j_info.get(mid, {})
         mysql = mysql_info.get(mid, {})
+        stats = rating_stats.get(mid, {})
         result.append(RecommendItem(
-            rank        = item["rank"],
-            movie_id    = mid,
-            title       = neo4j.get("title") or mysql.get("title"),
-            genres      = neo4j.get("genres") or [],
-            poster_path = mysql.get("poster_path"),
-            score       = item["score"],
+            rank         = item["rank"],
+            movie_id     = mid,
+            title        = neo4j.get("title") or mysql.get("title"),
+            genres       = neo4j.get("genres") or [],
+            poster_path  = mysql.get("poster_path"),
+            score        = item["score"],
+            avg_rating   = stats.get("avg_rating"),
+            total_ratings= stats.get("total_ratings", 0),
         ))
     return result
 
@@ -141,6 +153,31 @@ def recommend_compare(
 # USERS
 # ============================================================
 
+@app.get("/users/web/{user_id}/ratings", tags=["Users"])
+def get_web_user_ratings(user_id: int, limit: int = Query(20, ge=1, le=100)):
+    """Get web user's rating history with movie metadata."""
+    rated = get_web_user_rated_movies(user_id)
+    if not rated:
+        return []
+    # Enrich with movie metadata
+    movie_ids  = [r["movie_id"] for r in rated[:limit]]
+    mysql_info = get_movies_metadata_batch(movie_ids)
+    result = []
+    for r in rated[:limit]:
+        mid   = r["movie_id"]
+        movie = mysql_info.get(mid, {})
+        result.append({
+            "movie_id"  : mid,
+            "title"     : movie.get("title"),
+            "poster_path": movie.get("poster_path"),
+            "genres"    : movie.get("genres"),
+            "rating"    : r["rating"],
+            "rated_at"  : r["rated_at"].isoformat() if r.get("rated_at") else None,
+        })
+    return result
+
+
+
 @app.get("/users/{ml1m_user_id}", response_model=UserInfo, tags=["Users"])
 def get_user(ml1m_user_id: int):
     info = get_user_info(ml1m_user_id)
@@ -192,20 +229,7 @@ def list_movies(
     limit  : int = Query(20, ge=1, le=100),
     offset : int = Query(0, ge=0),
 ):
-    if genre:
-        return get_movies_by_genre(genre, limit=limit, offset=offset)
-    conn = _get_conn()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            "SELECT movie_id, title, year_published, genres, poster_path "
-            "FROM movies ORDER BY title LIMIT %s OFFSET %s",
-            (limit, offset)
-        )
-        return cursor.fetchall()
-    finally:
-        cursor.close()
-        conn.close()
+    return get_movies_by_genre(genre, limit=limit, offset=offset)
 
 
 # ============================================================
@@ -334,4 +358,74 @@ def update_genres(req: UpdateGenresRequest):
     return {
         "ml1m_user_id"    : ml1m_user_id,
         "preferred_genres": preferred_genres,
+    }
+
+# ============================================================
+# RATINGS
+# ============================================================
+
+class RatingRequest(BaseModel):
+    rating: int  # 1-5
+
+
+@app.put("/ratings/{movie_id}", tags=["Ratings"])
+def rate_movie(movie_id: int, req: RatingRequest, user_id: int = Query(...)):
+    """
+    Submit or update a rating (1-5) for a movie.
+    After rating, re-evaluate surrogate mapping if user has rated >= 10 movies.
+    """
+    if req.rating < 1 or req.rating > 5:
+        raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
+
+    # Check movie exists
+    movie = get_movie_metadata(movie_id)
+    if not movie:
+        raise HTTPException(status_code=404, detail="Movie not found")
+
+    # Save rating
+    upsert_rating(user_id, movie_id, req.rating)
+
+    # Check if enough ratings to switch to rating-based mapping
+    rated = get_web_user_rated_movies(user_id)
+    mapping_source = "genre"
+    new_ml1m_id = None
+
+    if len(rated) >= 10:
+        try:
+            from recommend import map_rating_to_user
+            new_ml1m_id = map_rating_to_user(rated)
+            update_ml1m_user_id(user_id, new_ml1m_id)
+            mapping_source = "rating"
+        except Exception:
+            pass  # mapping fails silently — rating is already saved
+    
+    return {
+        "movie_id"      : movie_id,
+        "rating"        : req.rating,
+        "total_rated"   : len(rated),
+        "mapping_source": mapping_source,
+        "ml1m_user_id"  : new_ml1m_id,
+    }
+
+
+@app.delete("/ratings/{movie_id}", tags=["Ratings"])
+def unrate_movie(movie_id: int, user_id: int = Query(...)):
+    """Remove a rating."""
+    delete_rating(user_id, movie_id)
+    return {"movie_id": movie_id, "status": "removed"}
+
+
+@app.get("/ratings/{movie_id}", tags=["Ratings"])
+def get_rating(movie_id: int, user_id: int = Query(...)):
+    """
+    Get current user's rating for a movie + community stats.
+    Returns: { user_rating, avg_rating, total_ratings }
+    """
+    user_rating = get_user_rating(user_id, movie_id)
+    stats       = get_movie_rating_stats(movie_id)
+    return {
+        "movie_id"    : movie_id,
+        "user_rating" : user_rating,
+        "avg_rating"  : stats["avg_rating"],
+        "total_ratings": stats["total_ratings"],
     }

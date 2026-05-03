@@ -79,17 +79,21 @@ def get_movies_metadata_batch(movie_ids: list[int]) -> dict[int, dict]:
 def search_movies(query: str, limit: int = 20) -> list[dict]:
     """
     Search movies by title (partial match).
-    Returns: [{ movie_id, title, year_published, genres, poster_path }, ...]
+    Returns: [{ movie_id, title, year_published, genres, poster_path, avg_rating, total_ratings }, ...]
     """
     conn = _get_conn()
     try:
         cursor = conn.cursor(dictionary=True)
         cursor.execute(
             """
-            SELECT movie_id, title, year_published, genres, poster_path
-            FROM movies
-            WHERE title LIKE %s
-            ORDER BY title
+            SELECT m.movie_id, m.title, m.year_published, m.genres, m.poster_path,
+                   ROUND(AVG(r.rating), 1) AS avg_rating,
+                   COUNT(r.rating)         AS total_ratings
+            FROM movies m
+            LEFT JOIN ratings r ON m.movie_id = r.movie_id
+            WHERE m.title LIKE %s
+            GROUP BY m.movie_id, m.title, m.year_published, m.genres, m.poster_path
+            ORDER BY m.title
             LIMIT %s
             """,
             (f"%{query}%", limit)
@@ -103,21 +107,40 @@ def search_movies(query: str, limit: int = 20) -> list[dict]:
 def get_movies_by_genre(genre: str, limit: int = 20, offset: int = 0) -> list[dict]:
     """
     Get movies filtered by genre.
-    Returns: [{ movie_id, title, year_published, genres, poster_path }, ...]
+    Returns: [{ movie_id, title, year_published, genres, poster_path, avg_rating, total_ratings }, ...]
     """
     conn = _get_conn()
     try:
         cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            """
-            SELECT movie_id, title, year_published, genres, poster_path
-            FROM movies
-            WHERE genres LIKE %s
-            ORDER BY title
-            LIMIT %s OFFSET %s
-            """,
-            (f"%{genre}%", limit, offset)
-        )
+        if genre:
+            cursor.execute(
+                """
+                SELECT m.movie_id, m.title, m.year_published, m.genres, m.poster_path,
+                       ROUND(AVG(r.rating), 1) AS avg_rating,
+                       COUNT(r.rating)         AS total_ratings
+                FROM movies m
+                LEFT JOIN ratings r ON m.movie_id = r.movie_id
+                WHERE m.genres LIKE %s
+                GROUP BY m.movie_id, m.title, m.year_published, m.genres, m.poster_path
+                ORDER BY m.title
+                LIMIT %s OFFSET %s
+                """,
+                (f"%{genre}%", limit, offset)
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT m.movie_id, m.title, m.year_published, m.genres, m.poster_path,
+                       ROUND(AVG(r.rating), 1) AS avg_rating,
+                       COUNT(r.rating)         AS total_ratings
+                FROM movies m
+                LEFT JOIN ratings r ON m.movie_id = r.movie_id
+                GROUP BY m.movie_id, m.title, m.year_published, m.genres, m.poster_path
+                ORDER BY m.title
+                LIMIT %s OFFSET %s
+                """,
+                (limit, offset)
+            )
         return cursor.fetchall()
     finally:
         cursor.close()
@@ -201,6 +224,121 @@ def update_ml1m_user_id(user_id: int, ml1m_user_id: int) -> None:
             (ml1m_user_id, user_id)
         )
         conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ============================================================
+# RATING QUERIES
+# ============================================================
+
+
+def upsert_rating(user_id: int, movie_id: int, rating: int) -> None:
+    """
+    Insert or update a rating (1-5).
+    Uses ON DUPLICATE KEY so rating same movie again just updates.
+    """
+    conn = _get_conn()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO ratings (user_id, movie_id, rating)
+            VALUES (%s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                rating   = VALUES(rating),
+                rated_at = CURRENT_TIMESTAMP
+            """,
+            (user_id, movie_id, rating)
+        )
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def delete_rating(user_id: int, movie_id: int) -> None:
+    """Remove a rating (user un-rates a movie)."""
+    conn = _get_conn()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM ratings WHERE user_id = %s AND movie_id = %s",
+            (user_id, movie_id)
+        )
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_user_rating(user_id: int, movie_id: int) -> int | None:
+    """
+    Get a single user's rating for a movie.
+    Returns rating (1-5) or None if not rated.
+    """
+    conn = _get_conn()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT rating FROM ratings WHERE user_id = %s AND movie_id = %s",
+            (user_id, movie_id)
+        )
+        row = cursor.fetchone()
+        return row[0] if row else None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_movie_rating_stats(movie_id: int) -> dict:
+    """
+    Get average rating and total count for a movie.
+    Returns: { avg_rating: float, total_ratings: int }
+    """
+    conn = _get_conn()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT
+                ROUND(AVG(rating), 1) AS avg_rating,
+                COUNT(*)              AS total_ratings
+            FROM ratings
+            WHERE movie_id = %s
+            """,
+            (movie_id,)
+        )
+        row = cursor.fetchone()
+        return {
+            "avg_rating"   : float(row["avg_rating"]) if row["avg_rating"] else None,
+            "total_ratings": int(row["total_ratings"]),
+        }
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_user_rated_movies(user_id: int) -> list[dict]:
+    """
+    Get all movies a web user has rated.
+    Returns: [{ movie_id, rating, rated_at }, ...]
+    Used for rating-based surrogate mapping.
+    """
+    conn = _get_conn()
+    try:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT movie_id, rating, rated_at
+            FROM ratings
+            WHERE user_id = %s
+            ORDER BY rated_at DESC
+            """,
+            (user_id,)
+        )
+        return cursor.fetchall()
     finally:
         cursor.close()
         conn.close()

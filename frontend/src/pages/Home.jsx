@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import Navbar from "../components/common/Navbar";
 import { movieAPI, recommendAPI } from "../api/index";
 import { useAuth } from "../context/AuthContext";
@@ -119,6 +119,38 @@ function MovieCard({ movie, onClick }) {
               : movie.genres.slice(0, 2).join(", ")}
           </div>
         )}
+        {/* Rating */}
+        {movie.avg_rating && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+              marginTop: "6px",
+            }}
+          >
+            <svg
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="#f59e0b"
+              stroke="#f59e0b"
+              strokeWidth="1.5"
+            >
+              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+            </svg>
+            <span
+              style={{ color: "#f59e0b", fontSize: "11px", fontWeight: "600" }}
+            >
+              {Number(movie.avg_rating).toFixed(1)}
+            </span>
+            {movie.total_ratings > 0 && (
+              <span style={{ color: "#334155", fontSize: "10px" }}>
+                ({movie.total_ratings})
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -127,6 +159,7 @@ function MovieCard({ movie, onClick }) {
 export default function Home() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [activeGenre, setActiveGenre] = useState(null);
   const [movies, setMovies] = useState([]);
@@ -173,9 +206,33 @@ export default function Home() {
   }, [user]);
 
   useEffect(() => {
-    loadMovies(null, 0);
+    const params = new URLSearchParams(location.search);
+    const genreParam = params.get("genre");
+    const fromGenre = location.state?.fromGenre;
+    const savedScroll = location.state?.scrollY;
+
+    if (fromGenre !== undefined) {
+      // Coming back from MovieDetail
+      setActiveGenre(fromGenre);
+      loadMovies(fromGenre, 0);
+    } else if (genreParam) {
+      setActiveGenre(genreParam);
+      loadMovies(genreParam, 0);
+    } else {
+      loadMovies(null, 0);
+    }
+
+    if (savedScroll) {
+      setTimeout(() => {
+        window.scrollTo(0, savedScroll);
+      }, 150);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
     loadRecommended();
-  }, [loadMovies, loadRecommended]);
+  }, [loadRecommended]);
 
   // Genre filter
   const handleGenreChange = (genre) => {
@@ -210,7 +267,15 @@ export default function Home() {
     loadMovies(activeGenre, nextPage * LIMIT);
   };
 
-  const handleMovieClick = (movieId) => navigate(`/movies/${movieId}`);
+  const handleMovieClick = (movieId) => {
+    // Ghi genre + scroll vào entry hiện tại của Home trước khi rời đi,
+    // để khi navigate(-1) từ MovieDetail quay về, location.state còn nguyên.
+    navigate(location.pathname + location.search, {
+      replace: true,
+      state: { fromGenre: activeGenre, scrollY: window.scrollY },
+    });
+    navigate(`/movies/${movieId}`);
+  };
 
   const displayMovies = searchQuery.trim() ? searchResults : movies;
 
