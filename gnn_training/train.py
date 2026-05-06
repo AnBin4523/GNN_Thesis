@@ -315,9 +315,10 @@ class LightGCN(nn.Module):
 def train_model(model, model_name, train_df, num_users, num_movies,
                 train_user_items, test_user_items,
                 edge_index=None, max_epochs=100,
-                batch_size=2048, lr=1e-3):
+                batch_size=2048, lr=1e-3, patience=PATIENCE):
 
     ckpt_path = f'{CKPT_DIR}/{model_name}.pt'
+    os.makedirs(os.path.dirname(ckpt_path), exist_ok=True)
 
     # Skip if checkpoint exists
     if os.path.exists(ckpt_path):
@@ -419,7 +420,7 @@ def train_model(model, model_name, train_df, num_users, num_movies,
                 }, ckpt_path)
             else:
                 no_improve += 1
-                if no_improve >= PATIENCE:
+                if no_improve >= patience:
                     print(f'  Early stopping at epoch {epoch+1}')
                     print(f'  Best NDCG@10: {best_ndcg:.4f} at epoch {best_epoch}')
                     break

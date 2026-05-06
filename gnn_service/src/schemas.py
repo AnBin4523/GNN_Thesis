@@ -75,7 +75,7 @@ class RegisterRequest(BaseModel):
     email            : str
     password         : str
     display_name     : str
-    preferred_genres : list[str]
+    preferred_genres : list[str] = []
 
 
 class LoginRequest(BaseModel):
@@ -127,6 +127,17 @@ class MetricsResponse(BaseModel):
     mf       : ModelMetrics
     ngcf     : ModelMetrics
     lightgcn : ModelMetrics
+
+
+class PatiencePoint(BaseModel):
+    patience : int
+    mf       : ModelMetrics
+    ngcf     : ModelMetrics
+    lightgcn : ModelMetrics
+
+
+class PatienceSensitivityResponse(BaseModel):
+    points : list[PatiencePoint]
 
 
 # ============================================================

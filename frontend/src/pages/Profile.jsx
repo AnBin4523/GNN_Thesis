@@ -1,8 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "../components/common/Navbar";
 import { useAuth } from "../context/AuthContext";
 import { userAPI, authAPI } from "../api/index";
+
+const parseGenres = (genres) => {
+  if (!genres) return [];
+  if (Array.isArray(genres)) return genres;
+  return genres.split(/[|,]/).map((g) => g.trim()).filter(Boolean);
+};
 
 const TMDB_IMG = "https://image.tmdb.org/t/p/w92";
 
@@ -41,6 +47,7 @@ export default function Profile() {
   const [currentMl1mId, setCurrentMl1mId] = useState(null);
   const [webRatings, setWebRatings] = useState([]);
   const [loadingWebRatings, setLoadingWebRatings] = useState(false);
+  const remapDoneRef = useRef(false);
 
   const preferredGenres = user?.preferred_genres
     ? user.preferred_genres
@@ -95,17 +102,26 @@ export default function Profile() {
     const fetchWebRatings = async () => {
       setLoadingWebRatings(true);
       try {
-        // GET /users/web/{user_id}/ratings — fallback: fetch per movie not ideal
-        // Use the ratings endpoint indirectly via movie list
-        const res = await fetch(
-          `http://localhost:8000/users/web/${user.user_id}/ratings`,
-        );
-        if (res.ok) {
-          const data = await res.json();
-          setWebRatings(data);
+        const res = await userAPI.getWebRatings(user.user_id, 100);
+        const data = res.data;
+        setWebRatings(data);
+
+        // Auto-remap once if user has enough ratings (catches seeded data too)
+        if (data.length >= 10 && !remapDoneRef.current) {
+          remapDoneRef.current = true;
+          try {
+            const remapRes = await authAPI.remap(user.user_id);
+            const newId = remapRes.data.ml1m_user_id;
+            if (newId != null && newId !== user.ml1m_user_id) {
+              updateUser({ ml1m_user_id: newId });
+              await fetchMl1mData(newId);
+            }
+          } catch {
+            // remap fails silently — ratings still shown correctly
+          }
         }
       } catch {
-        // endpoint might not exist yet, ignore
+        // ignore
       } finally {
         setLoadingWebRatings(false);
       }
@@ -856,7 +872,7 @@ export default function Profile() {
                           marginTop: "2px",
                         }}
                       >
-                        {item.genres.split(",").slice(0, 2).join(", ")}
+                        {parseGenres(item.genres).slice(0, 2).join(", ")}
                       </div>
                     )}
                   </div>

@@ -55,6 +55,47 @@ def get_topk_all_models(
     }
 
 
+def map_rating_to_user(rated: list[dict]) -> int:
+    """
+    Map a web user's rating history to the closest ML-1M user index.
+
+    Strategy: Jaccard similarity on the set of rated movie indices.
+    score = |overlap| / |union|  (higher = more similar taste)
+
+    Args:
+        rated : [{"movie_id": int, "rating": int, ...}, ...]
+
+    Returns:
+        user_idx (int) — best matching ML-1M user index
+    """
+    registry = get_registry()
+
+    user_movie_set = set()
+    for r in rated:
+        idx = registry.movie2idx.get(r["movie_id"])
+        if idx is not None:
+            user_movie_set.add(idx)
+
+    if not user_movie_set:
+        return 0
+
+    best_user_idx = 0
+    best_score    = -1.0
+
+    for ml1m_user_idx, ml1m_movies in registry.train_user_items.items():
+        if not ml1m_movies:
+            continue
+        overlap = len(user_movie_set & ml1m_movies)
+        if overlap == 0:
+            continue
+        score = overlap / len(user_movie_set | ml1m_movies)
+        if score > best_score:
+            best_score    = score
+            best_user_idx = ml1m_user_idx
+
+    return best_user_idx
+
+
 def map_genre_to_user(preferred_genres: list[str]) -> int:
     """
     Map a web user's preferred genres to the closest ML-1M user index.

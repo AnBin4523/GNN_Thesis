@@ -21,14 +21,12 @@ const NODE_RADIUS = {
   Occupation: 11,
 };
 
-// Canvas size scales with node count
 function getCanvasSize(nodeCount) {
   if (nodeCount <= 15) return { W: 1100, H: 700 };
   if (nodeCount <= 25) return { W: 1400, H: 860 };
   return { W: 1600, H: 1000 };
 }
 
-// Ring radius scales with number of items on that ring
 function ringRadius(count, minR, perItemR) {
   return Math.max(minR, (count * perItemR) / (2 * Math.PI));
 }
@@ -54,12 +52,10 @@ function useForceLayout(nodes, edges) {
     );
     const users = nodes.filter((n) => n.type === "User");
 
-    // User → center
     users.forEach((n) => {
       pos[n.id] = { x: centerX, y: centerY };
     });
 
-    // Movies → inner ring — radius grows with count so nodes don't overlap
     const movieR = ringRadius(movies.length, 220, 55);
     movies.forEach((n, i) => {
       const angle =
@@ -70,7 +66,6 @@ function useForceLayout(nodes, edges) {
       };
     });
 
-    // Genres → outer ring
     const genreR = ringRadius(genres.length, movieR + 180, 52);
     genres.forEach((n, i) => {
       const angle =
@@ -81,7 +76,6 @@ function useForceLayout(nodes, edges) {
       };
     });
 
-    // Demographics → left side, evenly spaced vertically
     const demoSpacing = Math.max(70, (H - 120) / Math.max(demos.length, 1));
     demos.forEach((n, i) => {
       pos[n.id] = {
@@ -90,7 +84,6 @@ function useForceLayout(nodes, edges) {
       };
     });
 
-    // Force simulation — stronger repulsion, more iterations for larger graphs
     const posArr = { ...pos };
     const REPULSION = 8000;
     const IDEAL_RATED = movieR * 0.95;
@@ -100,7 +93,6 @@ function useForceLayout(nodes, edges) {
     const PADDING = 70;
 
     for (let iter = 0; iter < ITERS; iter++) {
-      // Cooling factor — slow down over time for stability
       const cool = 1 - iter / ITERS;
 
       const forces = {};
@@ -108,7 +100,6 @@ function useForceLayout(nodes, edges) {
         forces[n.id] = { x: 0, y: 0 };
       });
 
-      // Repulsion between every pair
       for (let i = 0; i < nodes.length; i++) {
         for (let j = i + 1; j < nodes.length; j++) {
           const a = nodes[i],
@@ -126,7 +117,6 @@ function useForceLayout(nodes, edges) {
         }
       }
 
-      // Spring attraction along edges
       edges.forEach((edge) => {
         const a = posArr[edge.source];
         const b = posArr[edge.target];
@@ -142,7 +132,6 @@ function useForceLayout(nodes, edges) {
         forces[edge.target].y -= dy * f;
       });
 
-      // Weak gravity toward center (skip demographics — pinned left)
       nodes.forEach((n) => {
         if (n.type === "User") return;
         if (["Gender", "AgeGroup", "Occupation"].includes(n.type)) return;
@@ -150,7 +139,6 @@ function useForceLayout(nodes, edges) {
         forces[n.id].y += (centerY - posArr[n.id].y) * GRAVITY;
       });
 
-      // Apply with cooling
       nodes.forEach((n) => {
         if (n.type === "User") return;
         posArr[n.id].x = Math.max(
@@ -178,6 +166,15 @@ const EDGE_LABEL = {
   HAS_OCCUPATION: "HAS_OCCUPATION",
 };
 
+const NODE_DESC = {
+  User: "Your profile — the starting point for all recommendations",
+  Movie: "A film you rated in the ML-1M dataset",
+  Genre: "A genre shared by your rated movies",
+  Gender: "Your gender (demographic attribute)",
+  AgeGroup: "Your age group (demographic attribute)",
+  Occupation: "Your occupation (demographic attribute)",
+};
+
 function GraphCanvas({ nodes, edges }) {
   const svgRef = useRef(null);
   const { positions: basePositions, canvasSize } = useForceLayout(nodes, edges);
@@ -191,6 +188,14 @@ function GraphCanvas({ nodes, edges }) {
     x: 0,
     y: 0,
     text: "",
+  });
+  const [nodeTooltip, setNodeTooltip] = useState({
+    visible: false,
+    x: 0,
+    y: 0,
+    text: "",
+    subtext: "",
+    color: "",
   });
 
   useEffect(() => {
@@ -210,6 +215,7 @@ function GraphCanvas({ nodes, edges }) {
 
   const handleMouseDown = (e, nodeId) => {
     e.preventDefault();
+    setNodeTooltip({ visible: false, x: 0, y: 0, text: "", subtext: "", color: "" });
     const pt = getSVGPoint(e.clientX, e.clientY);
     dragRef.current = {
       offsetX: pt.x - (positions[nodeId]?.x || 0),
@@ -260,7 +266,6 @@ function GraphCanvas({ nodes, edges }) {
         onMouseUp={() => setDragging(null)}
         onMouseLeave={() => setDragging(null)}
       >
-        {/* Arrow marker defs */}
         <defs>
           {["RATED", "IN_GENRE", "HAS_GENDER", "HAS_AGE", "HAS_OCCUPATION"].map(
             (type) => {
@@ -320,7 +325,6 @@ function GraphCanvas({ nodes, edges }) {
           const dy = b.y - a.y;
           const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
-          // Start/end points trimmed to node circumference
           const x1 = a.x + (dx / dist) * rSrc;
           const y1 = a.y + (dy / dist) * rSrc;
           const x2 = b.x - (dx / dist) * (rTgt + 7);
@@ -335,7 +339,6 @@ function GraphCanvas({ nodes, edges }) {
 
           return (
             <g key={i}>
-              {/* Invisible hit area */}
               <line
                 x1={x1}
                 y1={y1}
@@ -360,7 +363,6 @@ function GraphCanvas({ nodes, edges }) {
                   setTooltip({ visible: false, x: 0, y: 0, text: "" });
                 }}
               />
-              {/* Visible line */}
               <line
                 x1={x1}
                 y1={y1}
@@ -376,7 +378,7 @@ function GraphCanvas({ nodes, edges }) {
           );
         })}
 
-        {/* ── LAYER 2: Edge labels — perpendicular offset, only on hover ── */}
+        {/* ── LAYER 2: Edge labels on hover ── */}
         {edges.map((edge, i) => {
           if (hoveredEdge !== i) return null;
           const a = positions[edge.source];
@@ -397,11 +399,9 @@ function GraphCanvas({ nodes, edges }) {
           const x2 = b.x - (dx / dist) * (rTgt + 7);
           const y2 = b.y - (dy / dist) * (rTgt + 7);
 
-          // Midpoint of the trimmed line
           const midX = (x1 + x2) / 2;
           const midY = (y1 + y2) / 2;
 
-          // Perpendicular unit vector (rotate 90°) — offset label sideways
           const nx = -dy / dist;
           const ny = dx / dist;
           const OFFSET = 14;
@@ -428,7 +428,6 @@ function GraphCanvas({ nodes, edges }) {
 
           return (
             <g key={`lbl-${i}`} style={{ pointerEvents: "none" }}>
-              {/* Label background pill */}
               <rect
                 x={lx - 36}
                 y={ly - 9}
@@ -453,7 +452,7 @@ function GraphCanvas({ nodes, edges }) {
           );
         })}
 
-        {/* ── LAYER 3: Nodes — always on top ── */}
+        {/* ── LAYER 3: Nodes ── */}
         {nodes.map((node) => {
           const pos = positions[node.id];
           if (!pos) return null;
@@ -466,6 +465,31 @@ function GraphCanvas({ nodes, edges }) {
             <g
               key={node.id}
               onMouseDown={(e) => handleMouseDown(e, node.id)}
+              onMouseEnter={(e) => {
+                if (dragging) return;
+                const rect = svgRef.current.getBoundingClientRect();
+                setNodeTooltip({
+                  visible: true,
+                  x: e.clientX - rect.left + 14,
+                  y: e.clientY - rect.top - 48,
+                  text:
+                    node.label.length > 32
+                      ? node.label.slice(0, 31) + "…"
+                      : node.label,
+                  subtext: NODE_DESC[node.type] || node.type,
+                  color,
+                });
+              }}
+              onMouseLeave={() =>
+                setNodeTooltip({
+                  visible: false,
+                  x: 0,
+                  y: 0,
+                  text: "",
+                  subtext: "",
+                  color: "",
+                })
+              }
               style={{ cursor: "grab" }}
             >
               {node.type === "User" && (
@@ -525,6 +549,288 @@ function GraphCanvas({ nodes, edges }) {
           {tooltip.text}
         </div>
       )}
+
+      {/* Node hover tooltip */}
+      {nodeTooltip.visible && (
+        <div
+          style={{
+            position: "absolute",
+            left: nodeTooltip.x,
+            top: nodeTooltip.y,
+            background: "#1e293b",
+            border: `1px solid ${nodeTooltip.color}55`,
+            borderRadius: "8px",
+            padding: "6px 12px",
+            pointerEvents: "none",
+            whiteSpace: "nowrap",
+            zIndex: 10,
+          }}
+        >
+          <div
+            style={{
+              color: nodeTooltip.color,
+              fontSize: "12px",
+              fontWeight: "600",
+            }}
+          >
+            {nodeTooltip.text}
+          </div>
+          <div style={{ color: "#64748b", fontSize: "10px", marginTop: "2px" }}>
+            {nodeTooltip.subtext}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExplainerCard() {
+  const [open, setOpen] = useState(true);
+
+  return (
+    <div style={{ marginBottom: "1.5rem" }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          background: "rgba(15,23,42,0.85)",
+          border: "1px solid rgba(30,41,59,0.8)",
+          borderRadius: open ? "10px 10px 0 0" : "10px",
+          padding: "10px 16px",
+          cursor: "pointer",
+          color: "#94a3b8",
+          fontSize: "13px",
+          fontWeight: "500",
+        }}
+      >
+        <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="10" stroke="#14b8a6" strokeWidth="1.5" />
+            <path
+              d="M12 8v4M12 16h.01"
+              stroke="#14b8a6"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+          </svg>
+          How to read this graph
+        </span>
+        <span style={{ fontSize: "10px", color: "#475569" }}>
+          {open ? "▲ hide" : "▼ show"}
+        </span>
+      </button>
+
+      {open && (
+        <div
+          style={{
+            background: "rgba(15,23,42,0.6)",
+            border: "1px solid rgba(30,41,59,0.8)",
+            borderTop: "none",
+            borderRadius: "0 0 10px 10px",
+            padding: "1rem",
+          }}
+        >
+          {/* Node type cards */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, 1fr)",
+              gap: "0.75rem",
+              marginBottom: "1rem",
+            }}
+          >
+            {[
+              {
+                color: "#14b8a6",
+                title: "YOU (center node)",
+                desc: "Your user profile — the starting point. LightGCN builds a taste embedding by aggregating signals from all your connected nodes.",
+              },
+              {
+                color: "#6366f1",
+                title: "Movies (purple ring)",
+                desc: "Films you have rated. Each rating is a direct signal about your preferences — the more ratings, the richer your profile.",
+              },
+              {
+                color: "#f59e0b",
+                title: "Genres (amber outer ring)",
+                desc: "Categories your rated movies belong to (Action, Drama…). Shared genres between users reveal taste similarity clusters.",
+              },
+              {
+                color: "#8b5cf6",
+                title: "Demographics (left panel)",
+                desc: "Your age group, gender, and occupation. Used as auxiliary context signals — especially helpful for cold-start users with few ratings.",
+              },
+            ].map((item) => (
+              <div
+                key={item.title}
+                style={{
+                  display: "flex",
+                  gap: "10px",
+                  padding: "10px 12px",
+                  background: "rgba(30,41,59,0.5)",
+                  borderRadius: "8px",
+                  borderLeft: `3px solid ${item.color}`,
+                }}
+              >
+                <div
+                  style={{
+                    width: "10px",
+                    height: "10px",
+                    borderRadius: "50%",
+                    background: item.color,
+                    flexShrink: 0,
+                    marginTop: "3px",
+                  }}
+                />
+                <div>
+                  <div
+                    style={{
+                      color: item.color,
+                      fontSize: "12px",
+                      fontWeight: "600",
+                      marginBottom: "3px",
+                    }}
+                  >
+                    {item.title}
+                  </div>
+                  <div
+                    style={{
+                      color: "#64748b",
+                      fontSize: "11px",
+                      lineHeight: "1.45",
+                    }}
+                  >
+                    {item.desc}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Edge types */}
+          <div
+            style={{
+              borderTop: "1px solid rgba(30,41,59,0.8)",
+              paddingTop: "0.75rem",
+              marginBottom: "0.875rem",
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "1.25rem",
+              alignItems: "center",
+            }}
+          >
+            <span
+              style={{
+                color: "#475569",
+                fontSize: "11px",
+                fontWeight: "500",
+                textTransform: "uppercase",
+                letterSpacing: "0.04em",
+              }}
+            >
+              Edges (relationships):
+            </span>
+            {[
+              {
+                color: "#6366f1",
+                label: "RATED",
+                desc: "you rated this movie",
+              },
+              {
+                color: "#f59e0b",
+                label: "IN_GENRE",
+                desc: "movie belongs to this genre",
+              },
+              {
+                color: "#94a3b8",
+                label: "HAS_GENDER / AGE / OCCUPATION",
+                desc: "demographic attributes",
+              },
+            ].map((e) => (
+              <div
+                key={e.label}
+                style={{ display: "flex", alignItems: "center", gap: "6px" }}
+              >
+                <svg width="24" height="8" viewBox="0 0 24 8">
+                  <line
+                    x1="0"
+                    y1="4"
+                    x2="18"
+                    y2="4"
+                    stroke={e.color}
+                    strokeWidth="1.5"
+                    strokeOpacity="0.8"
+                  />
+                  <polygon
+                    points="16,1 24,4 16,7"
+                    fill={e.color}
+                    fillOpacity="0.8"
+                  />
+                </svg>
+                <span style={{ color: "#64748b", fontSize: "11px" }}>
+                  <span style={{ color: e.color, fontWeight: "500" }}>
+                    {e.label}
+                  </span>{" "}
+                  — {e.desc}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* How GNN uses this */}
+          <div
+            style={{
+              background: "rgba(20,184,166,0.05)",
+              border: "1px solid rgba(20,184,166,0.15)",
+              borderRadius: "8px",
+              padding: "10px 14px",
+              display: "flex",
+              gap: "10px",
+              alignItems: "flex-start",
+            }}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              style={{ flexShrink: 0, marginTop: "1px" }}
+            >
+              <path
+                d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"
+                stroke="#14b8a6"
+                strokeWidth="1.5"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <div>
+              <div
+                style={{
+                  color: "#14b8a6",
+                  fontSize: "11px",
+                  fontWeight: "600",
+                  marginBottom: "4px",
+                }}
+              >
+                How LightGCN uses this graph
+              </div>
+              <div
+                style={{ color: "#64748b", fontSize: "11px", lineHeight: "1.5" }}
+              >
+                LightGCN propagates information along each edge — your ratings
+                "flow" through movies into genres, and those genre signals "flow"
+                back to refine your taste embedding. After several propagation
+                hops, the model ranks every unseen movie by comparing your final
+                embedding with each movie&apos;s embedding — closer distance =
+                higher recommendation rank.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -541,7 +847,7 @@ export default function Graph() {
 
   useEffect(() => {
     const fetchData = async () => {
-      if (!ml1mUserId) return;
+      if (ml1mUserId == null) return;
       setLoading(true);
       try {
         const [sgRes, stRes] = await Promise.all([
@@ -626,6 +932,9 @@ export default function Graph() {
             ))}
           </div>
         </div>
+
+        {/* Explainer — collapsible */}
+        <ExplainerCard />
 
         {/* Stats */}
         {stats && (
@@ -715,34 +1024,108 @@ export default function Graph() {
             background: "rgba(15,23,42,0.85)",
             border: "1px solid rgba(30,41,59,0.8)",
             borderRadius: "10px",
-            padding: "1rem",
-            display: "flex",
-            flexWrap: "wrap",
-            gap: "1rem",
-            alignItems: "center",
+            padding: "0.875rem 1rem",
           }}
         >
-          <span
-            style={{ color: "#475569", fontSize: "12px", fontWeight: "500" }}
+          {/* Node types */}
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "0.875rem",
+              alignItems: "center",
+              marginBottom: "0.625rem",
+            }}
           >
-            Node types:
-          </span>
-          {Object.entries(NODE_COLORS).map(([type, color]) => (
-            <div
-              key={type}
-              style={{ display: "flex", alignItems: "center", gap: "6px" }}
+            <span
+              style={{
+                color: "#475569",
+                fontSize: "11px",
+                fontWeight: "500",
+                minWidth: "fit-content",
+              }}
             >
+              Nodes:
+            </span>
+            {Object.entries(NODE_COLORS).map(([type, color]) => (
               <div
-                style={{
-                  width: "10px",
-                  height: "10px",
-                  borderRadius: "50%",
-                  background: color,
-                }}
-              />
-              <span style={{ color: "#94a3b8", fontSize: "12px" }}>{type}</span>
-            </div>
-          ))}
+                key={type}
+                style={{ display: "flex", alignItems: "center", gap: "6px" }}
+              >
+                <div
+                  style={{
+                    width: "9px",
+                    height: "9px",
+                    borderRadius: "50%",
+                    background: color,
+                  }}
+                />
+                <span style={{ color: "#94a3b8", fontSize: "11px" }}>
+                  {type}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div
+            style={{
+              borderTop: "1px solid rgba(30,41,59,0.8)",
+              marginBottom: "0.625rem",
+            }}
+          />
+
+          {/* Edge types */}
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "0.875rem",
+              alignItems: "center",
+            }}
+          >
+            <span
+              style={{
+                color: "#475569",
+                fontSize: "11px",
+                fontWeight: "500",
+                minWidth: "fit-content",
+              }}
+            >
+              Edges:
+            </span>
+            {[
+              { type: "RATED", color: "#6366f1" },
+              { type: "IN_GENRE", color: "#f59e0b" },
+              { type: "HAS_GENDER", color: "#ec4899" },
+              { type: "HAS_AGE", color: "#8b5cf6" },
+              { type: "HAS_OCCUPATION", color: "#06b6d4" },
+            ].map(({ type, color }) => (
+              <div
+                key={type}
+                style={{ display: "flex", alignItems: "center", gap: "6px" }}
+              >
+                <svg width="18" height="6" viewBox="0 0 18 6">
+                  <line
+                    x1="0"
+                    y1="3"
+                    x2="13"
+                    y2="3"
+                    stroke={color}
+                    strokeWidth="1.5"
+                    strokeOpacity="0.8"
+                  />
+                  <polygon
+                    points="11,0.5 18,3 11,5.5"
+                    fill={color}
+                    fillOpacity="0.8"
+                  />
+                </svg>
+                <span style={{ color: "#64748b", fontSize: "11px" }}>
+                  {type}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

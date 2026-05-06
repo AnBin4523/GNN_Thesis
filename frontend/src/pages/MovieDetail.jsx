@@ -60,7 +60,7 @@ function StarRating({ userRating, onRate, disabled }) {
 export default function MovieDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const [movie, setMovie] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -149,7 +149,8 @@ export default function MovieDetail() {
         await ratingAPI.unrateMovie(movie.movie_id, user.user_id);
       } else {
         const res = await ratingAPI.rateMovie(movie.movie_id, user.user_id, star);
-        if (res.data.mapping_source === "rating") {
+        if (res.data.mapping_source === "rating" && res.data.ml1m_user_id != null) {
+          updateUser({ ml1m_user_id: res.data.ml1m_user_id });
           setMappingUpdated(true);
           setTimeout(() => setMappingUpdated(false), 4000);
         }

@@ -43,22 +43,139 @@ const METRICS = [
   },
 ];
 
+const MODEL_LINE = [
+  { key: "mf",       color: "#f59e0b", label: "MF" },
+  { key: "ngcf",     color: "#8b5cf6", label: "NGCF" },
+  { key: "lightgcn", color: "#14b8a6", label: "LightGCN" },
+];
+
+function PatienceChart({ points }) {
+  const W = 560, H = 220;
+  const PAD = { l: 58, r: 24, t: 24, b: 44 };
+  const pw = W - PAD.l - PAD.r;
+  const ph = H - PAD.t - PAD.b;
+  const n  = points.length;
+
+  const allNdcg = points.flatMap((p) =>
+    MODEL_LINE.map((m) => p[m.key].ndcg_at_10),
+  );
+  const yMin = Math.floor((Math.min(...allNdcg) - 0.004) * 1000) / 1000;
+  const yMax = Math.ceil((Math.max(...allNdcg) + 0.003) * 1000) / 1000;
+
+  const xPos = (i) => PAD.l + (i / (n - 1)) * pw;
+  const yPos = (v) => PAD.t + ph - ((v - yMin) / (yMax - yMin)) * ph;
+
+  const GRID = 4;
+  const yStep = (yMax - yMin) / GRID;
+  const optIdx = points.findIndex((p) => p.patience === 10);
+
+  return (
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      style={{ width: "100%", maxWidth: W, display: "block" }}
+    >
+      {/* grid */}
+      {Array.from({ length: GRID + 1 }).map((_, i) => {
+        const v = yMin + i * yStep;
+        const y = yPos(v);
+        return (
+          <g key={i}>
+            <line
+              x1={PAD.l} y1={y} x2={PAD.l + pw} y2={y}
+              stroke="rgba(30,41,59,0.7)" strokeWidth={1}
+            />
+            <text x={PAD.l - 6} y={y + 4} textAnchor="end" fill="#475569" fontSize={10}>
+              {v.toFixed(3)}
+            </text>
+          </g>
+        );
+      })}
+
+      {/* optimal dashed line */}
+      {optIdx >= 0 && (
+        <line
+          x1={xPos(optIdx)} y1={PAD.t}
+          x2={xPos(optIdx)} y2={PAD.t + ph}
+          stroke="rgba(20,184,166,0.35)" strokeWidth={1} strokeDasharray="4 3"
+        />
+      )}
+
+      {/* x labels */}
+      {points.map((p, i) => (
+        <text
+          key={p.patience} x={xPos(i)} y={PAD.t + ph + 18}
+          textAnchor="middle" fill="#64748b" fontSize={11}
+        >
+          {p.patience}
+        </text>
+      ))}
+      <text
+        x={PAD.l + pw / 2} y={H - 4}
+        textAnchor="middle" fill="#475569" fontSize={11}
+      >
+        Early Stopping Patience
+      </text>
+
+      {/* lines + dots */}
+      {MODEL_LINE.map(({ key, color }) => {
+        const vals = points.map((p) => p[key].ndcg_at_10);
+        const bestVal = Math.max(...vals);
+        const path = points
+          .map((p, i) => `${i === 0 ? "M" : "L"} ${xPos(i)} ${yPos(p[key].ndcg_at_10)}`)
+          .join(" ");
+        return (
+          <g key={key}>
+            <path d={path} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" />
+            {points.map((p, i) => {
+              const v   = p[key].ndcg_at_10;
+              const isBest = v === bestVal;
+              return (
+                <circle
+                  key={i}
+                  cx={xPos(i)} cy={yPos(v)}
+                  r={isBest ? 6 : 4}
+                  fill={isBest ? color : "#0a0f1e"}
+                  stroke={color} strokeWidth={2}
+                />
+              );
+            })}
+          </g>
+        );
+      })}
+
+      {/* legend */}
+      {MODEL_LINE.map(({ key, color, label }, i) => (
+        <g key={key} transform={`translate(${PAD.l + i * 130}, 6)`}>
+          <line x1={0} y1={6} x2={18} y2={6} stroke={color} strokeWidth={2} />
+          <circle cx={9} cy={6} r={3} fill={color} />
+          <text x={22} y={10} fill="#94a3b8" fontSize={11}>{label}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
 export default function Metrics() {
-  const [metrics, setMetrics] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [metrics,   setMetrics]   = useState(null);
+  const [patience,  setPatience]  = useState(null);
+  const [loading,   setLoading]   = useState(true);
 
   useEffect(() => {
-    const fetchMetrics = async () => {
+    const fetchAll = async () => {
       try {
-        const res = await metricsAPI.getMetrics();
-        setMetrics(res.data);
+        const [mRes, pRes] = await Promise.all([
+          metricsAPI.getMetrics(),
+          metricsAPI.getPatienceSensitivity(),
+        ]);
+        setMetrics(mRes.data);
+        setPatience(pRes.data.points);
       } catch {
         // ignore
       } finally {
         setLoading(false);
       }
     };
-    fetchMetrics();
+    fetchAll();
   }, []);
 
   const getBest = (metricKey) => {
@@ -379,6 +496,84 @@ export default function Metrics() {
                       </div>
                     );
                   })}
+                </div>
+              </div>
+            )}
+
+            {/* Patience sensitivity */}
+            {patience && patience.length > 0 && (
+              <div
+                style={{
+                  background: "rgba(15,23,42,0.85)",
+                  border: "1px solid rgba(30,41,59,0.8)",
+                  borderRadius: "12px",
+                  padding: "1.5rem",
+                  marginBottom: "1.5rem",
+                }}
+              >
+                <h3
+                  style={{
+                    color: "#f1f5f9",
+                    fontSize: "14px",
+                    fontWeight: "600",
+                    margin: "0 0 0.25rem",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "3px",
+                      height: "16px",
+                      background: "#14b8a6",
+                      borderRadius: "2px",
+                    }}
+                  />
+                  Early Stopping Patience Sensitivity (NDCG@10)
+                </h3>
+                <p style={{ color: "#475569", fontSize: "12px", margin: "0 0 1rem" }}>
+                  All models trained with identical settings — only patience varies.
+                  Filled dot = best per model. Dashed line = chosen value (patience = 10).
+                </p>
+                <PatienceChart points={patience} />
+
+                {/* Numeric table */}
+                <div style={{ overflowX: "auto", marginTop: "1.25rem" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+                    <thead>
+                      <tr style={{ borderBottom: "1px solid rgba(30,41,59,0.8)" }}>
+                        <th style={{ color: "#64748b", textAlign: "left",   padding: "6px 8px", fontWeight: 600 }}>Patience</th>
+                        {MODEL_LINE.map(({ key, color, label }) => (
+                          <th key={key} style={{ color, textAlign: "center", padding: "6px 8px", fontWeight: 600 }}>
+                            {label}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {patience.map((p) => (
+                        <tr
+                          key={p.patience}
+                          style={{
+                            borderBottom: "1px solid rgba(30,41,59,0.4)",
+                            background: p.patience === 10
+                              ? "rgba(20,184,166,0.06)"
+                              : "transparent",
+                          }}
+                        >
+                          <td style={{ color: p.patience === 10 ? "#14b8a6" : "#94a3b8", padding: "6px 8px", fontWeight: p.patience === 10 ? 700 : 400 }}>
+                            {p.patience}{p.patience === 10 ? " ★" : ""}
+                          </td>
+                          {MODEL_LINE.map(({ key, color }) => (
+                            <td key={key} style={{ color, textAlign: "center", padding: "6px 8px", fontVariantNumeric: "tabular-nums" }}>
+                              {p[key].ndcg_at_10.toFixed(4)}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}

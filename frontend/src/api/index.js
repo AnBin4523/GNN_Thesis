@@ -18,6 +18,7 @@ export const authAPI = {
       user_id: userId,
       preferred_genres: genres,
     }),
+  remap: (userId) => api.post("/auth/remap", { user_id: userId }),
 };
 
 // ============================================================
@@ -37,6 +38,8 @@ export const userAPI = {
   getUserInfo: (ml1mUserId) => api.get(`/users/${ml1mUserId}`),
   getUserRated: (ml1mUserId, limit = 20) =>
     api.get(`/users/${ml1mUserId}/rated`, { params: { limit } }),
+  getWebRatings: (userId, limit = 100) =>
+    api.get(`/users/web/${userId}/ratings`, { params: { limit } }),
 };
 
 // ============================================================
@@ -69,6 +72,7 @@ export const graphAPI = {
 // ============================================================
 export const metricsAPI = {
   getMetrics: () => api.get("/metrics"),
+  getPatienceSensitivity: () => api.get("/metrics/patience"),
 };
 
 // ============================================================

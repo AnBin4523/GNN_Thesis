@@ -27,6 +27,7 @@ from schemas import (
     RecommendItem, RecommendResponse, CompareResponse,
     UserInfo, WebUserResponse, RegisterRequest, LoginRequest, LoginResponse,
     SubgraphResponse, MetricsResponse, ModelMetrics,
+    PatiencePoint, PatienceSensitivityResponse,
     MovieDetail, HealthResponse,
 )
 
@@ -277,6 +278,33 @@ def get_metrics():
     )
 
 
+@app.get("/metrics/patience", response_model=PatienceSensitivityResponse, tags=["Metrics"])
+def get_patience_metrics():
+    path = RESULT_DIR / "patience_sensitivity.json"
+    if not path.exists():
+        raise HTTPException(404, "patience_sensitivity.json not found")
+    with open(path) as f:
+        data = json.load(f)
+
+    def _parse(d: dict) -> ModelMetrics:
+        return ModelMetrics(
+            precision_at_10 = d.get("Precision@10", 0),
+            recall_at_10    = d.get("Recall@10",    0),
+            ndcg_at_10      = d.get("NDCG@10",      0),
+        )
+
+    points = []
+    for p_str in sorted(data.keys(), key=int):
+        d = data[p_str]
+        points.append(PatiencePoint(
+            patience = int(p_str),
+            mf       = _parse(d.get("MF",       {})),
+            ngcf     = _parse(d.get("NGCF",     {})),
+            lightgcn = _parse(d.get("LightGCN", {})),
+        ))
+    return PatienceSensitivityResponse(points=points)
+
+
 # ============================================================
 # AUTH
 # ============================================================
@@ -359,6 +387,33 @@ def update_genres(req: UpdateGenresRequest):
         "ml1m_user_id"    : ml1m_user_id,
         "preferred_genres": preferred_genres,
     }
+
+class RemapRequest(BaseModel):
+    user_id: int
+
+
+@app.post("/auth/remap", tags=["Auth"])
+def remap_surrogate(req: RemapRequest):
+    """
+    Re-compute ML-1M surrogate mapping based on actual rating history.
+    Requires >= 10 rated movies; otherwise returns current mapping unchanged.
+    """
+    from recommend import map_rating_to_user
+    rated = get_web_user_rated_movies(req.user_id)
+    if len(rated) < 10:
+        return {
+            "ml1m_user_id"  : None,
+            "mapping_source": "genre",
+            "total_rated"   : len(rated),
+        }
+    new_ml1m_id = map_rating_to_user(rated)
+    update_ml1m_user_id(req.user_id, new_ml1m_id)
+    return {
+        "ml1m_user_id"  : new_ml1m_id,
+        "mapping_source": "rating",
+        "total_rated"   : len(rated),
+    }
+
 
 # ============================================================
 # RATINGS

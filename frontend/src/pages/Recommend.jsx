@@ -4,6 +4,87 @@ import Navbar from "../components/common/Navbar";
 import { useAuth } from "../context/AuthContext";
 import { recommendAPI } from "../api/index";
 
+function DatasetBadge() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ marginBottom: "1.25rem" }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          background: "rgba(15,23,42,0.7)",
+          border: "1px solid rgba(51,65,85,0.6)",
+          borderRadius: open ? "8px 8px 0 0" : "8px",
+          padding: "8px 14px",
+          cursor: "pointer",
+          gap: "1rem",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+          <span
+            style={{
+              background: "rgba(99,102,241,0.15)",
+              border: "1px solid rgba(99,102,241,0.3)",
+              borderRadius: "4px",
+              padding: "1px 8px",
+              color: "#818cf8",
+              fontSize: "10px",
+              fontWeight: "700",
+              letterSpacing: "0.04em",
+            }}
+          >
+            BENCHMARK DATASET
+          </span>
+          <span style={{ color: "#64748b", fontSize: "12px" }}>
+            MovieLens 1M · 6,040 users · 3,706 movies · 1M ratings · movies 1919–2000
+          </span>
+        </div>
+        <span style={{ color: "#334155", fontSize: "10px", flexShrink: 0 }}>
+          {open ? "▲" : "▼ why old movies?"}
+        </span>
+      </button>
+
+      {open && (
+        <div
+          style={{
+            background: "rgba(15,23,42,0.6)",
+            border: "1px solid rgba(51,65,85,0.6)",
+            borderTop: "none",
+            borderRadius: "0 0 8px 8px",
+            padding: "12px 14px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "8px",
+          }}
+        >
+          <p style={{ color: "#94a3b8", fontSize: "12px", margin: 0, lineHeight: "1.55" }}>
+            <span style={{ color: "#f1f5f9", fontWeight: "500" }}>Why are the recommended movies so old?</span>{" "}
+            MovieLens 1M was collected between 2000–2003, so the catalog only
+            covers films up to that era. This is intentional — ML-1M is a
+            standard academic benchmark widely used in collaborative filtering
+            research to enable fair, reproducible comparisons.
+          </p>
+          <p style={{ color: "#94a3b8", fontSize: "12px", margin: 0, lineHeight: "1.55" }}>
+            <span style={{ color: "#f1f5f9", fontWeight: "500" }}>Research contribution.</span>{" "}
+            The goal of this thesis is to compare MF, NGCF, and LightGCN under
+            identical conditions — same dataset, same train/test split (80/10/10
+            per user), same BPR loss, same early-stopping patience. The movie
+            catalog is incidental; the algorithmic comparison is the contribution.
+          </p>
+          <p style={{ color: "#475569", fontSize: "11px", margin: 0, lineHeight: "1.5" }}>
+            Note: The original LightGCN paper (He et al., 2020) uses Gowalla,
+            Yelp2018, and Amazon-Book — not ML-1M. We adapt it to ML-1M following
+            standard implicit-feedback ranking evaluation practice.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const TMDB_IMG = "https://image.tmdb.org/t/p/w300";
 
 const MODEL_INFO = {
@@ -164,7 +245,7 @@ export default function Recommend() {
   const ml1mUserId = user?.ml1m_user_id;
 
   const fetchRecommend = async (model, topK) => {
-    if (!ml1mUserId) return;
+    if (ml1mUserId == null) return;
     setLoading(true);
     try {
       const res = await recommendAPI.getRecommend(ml1mUserId, model, topK);
@@ -211,6 +292,9 @@ export default function Recommend() {
             Top-{k} movies for ML-1M User #{ml1mUserId} · {user?.display_name}
           </p>
         </div>
+
+        {/* Dataset disclaimer */}
+        <DatasetBadge />
 
         {/* Model selector */}
         <div
