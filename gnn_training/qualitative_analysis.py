@@ -263,6 +263,89 @@ def plot_qualitative(user_cases, models, train_user_items, num_movies,
 
 
 # ─── Console output: movie titles ───────────────────────────────
+def plot_qualitative_heatmap(user_cases, models, train_user_items, num_movies,
+                              genre_lookup, genre_list):
+    """
+    2x2 grid of heatmaps, one per user type.
+    Rows  = User Profile | MF Recs | NGCF Recs | LightGCN Recs
+    Cols  = top 10 genres
+    Color = absolute genre proportion (out of all genre-movie tags)
+    """
+    HEATMAP_GENRES = [
+        'Drama', 'Comedy', 'Action', 'Thriller', 'Romance',
+        'Adventure', 'Sci-Fi', 'Horror', 'Crime', 'Animation',
+        'Documentary',
+    ]
+
+    show_genres = [g for g in HEATMAP_GENRES if g in genre_list]
+    g_indices   = [genre_list.index(g) for g in show_genres]
+    row_labels  = ['User\nProfile', 'MF\nRecs', 'NGCF\nRecs', 'LightGCN\nRecs']
+
+    # Pre-compute all matrices to find a shared vmax
+    all_mats = {}
+    for user_label, user_idx in user_cases.items():
+        train_items = train_user_items.get(user_idx, set())
+        mat = []
+        full = genre_vector(train_items, genre_lookup, genre_list)
+        mat.append(full[g_indices])
+        for _, model in models.items():
+            recs = get_top_k(model, user_idx, num_movies, train_user_items, k=10)
+            full = genre_vector(set(recs), genre_lookup, genre_list)
+            mat.append(full[g_indices])
+        all_mats[user_label] = np.array(mat)
+
+    global_max = max(m.max() for m in all_mats.values())
+    vmax = min(round(global_max + 0.05, 1), 0.75)
+
+    fig, axes = plt.subplots(2, 2, figsize=(18, 10))
+    axes_flat  = axes.flatten()
+
+    for ax_idx, (user_label, user_idx) in enumerate(user_cases.items()):
+        ax  = axes_flat[ax_idx]
+        mat = all_mats[user_label]
+        n_train = len(train_user_items.get(user_idx, set()))
+
+        im = ax.imshow(mat, aspect='auto', cmap='Blues', vmin=0, vmax=vmax)
+
+        # Cell annotations
+        for i in range(mat.shape[0]):
+            for j in range(mat.shape[1]):
+                val = mat[i, j]
+                if val > 0.01:
+                    text_color = 'white' if val > vmax * 0.58 else '#1e293b'
+                    ax.text(j, i, f'{val:.0%}',
+                            ha='center', va='center',
+                            fontsize=11, color=text_color, fontweight='bold')
+
+        # Separator line between User Profile and model rows
+        ax.axhline(0.5, color='white', linewidth=3)
+
+        ax.set_xticks(range(len(show_genres)))
+        ax.set_xticklabels(show_genres, rotation=35, ha='right', fontsize=12)
+        ax.set_yticks(range(4))
+        ax.set_yticklabels(row_labels, fontsize=12)
+        ax.set_title(
+            f'{user_label}  (user_idx={user_idx},  train={n_train})',
+            fontsize=13, fontweight='bold', pad=10,
+        )
+
+        cbar = plt.colorbar(im, ax=ax, fraction=0.036, pad=0.04, shrink=0.85)
+        cbar.set_label('Genre proportion', fontsize=11)
+        cbar.ax.tick_params(labelsize=10)
+
+    fig.suptitle(
+        'Qualitative Analysis — Genre Taste vs Recommendation Genre Mix\n'
+        'Row 1 = user taste from training history  |  Rows 2-4 = Top-10 model recommendations',
+        fontsize=15, fontweight='bold',
+    )
+    plt.tight_layout()
+
+    out = f'{RESULT_DIR}/qualitative_heatmap.png'
+    plt.savefig(out, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f'Heatmap saved: {out}')
+
+
 def print_cases(user_cases, models, train_user_items, num_movies,
                 genre_lookup, idx2title):
     for user_label, user_idx in user_cases.items():
@@ -327,9 +410,11 @@ def main():
     print_cases(user_cases, models, train_user_items, num_movies,
                 genre_lookup, idx2title)
 
-    print('\nGenerating chart ...')
+    print('\nGenerating charts ...')
     plot_qualitative(user_cases, models, train_user_items, num_movies,
                      genre_lookup, idx2title)
+    plot_qualitative_heatmap(user_cases, models, train_user_items, num_movies,
+                              genre_lookup, genre_list)
 
 
 if __name__ == '__main__':
