@@ -3,6 +3,16 @@
 Bachelor thesis project: controlled empirical comparison of Matrix Factorization, NGCF, and LightGCN on MovieLens 1M, integrated with a full-stack web application featuring a Neo4j knowledge graph and a cold-start surrogate mapping strategy.
 
 ---
+## Screenshots
+
+### Homepage
+![Homepage](./images/homepage.png)
+
+### Movie Detail Page
+![Movie Detail Page](./images/movie_detail_page.png)
+
+### Model Comparison
+![Model Comparison](./images/modelCompare.png)
 
 ## Table of Contents
 
