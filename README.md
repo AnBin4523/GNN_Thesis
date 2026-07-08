@@ -404,3 +404,20 @@ LightGCN achieves **+109% NDCG** over Popularity and **+6.0% NDCG** over MF, con
 | Rating Surrogate | 0.0471 | 22.8% |
 
 Genre Surrogate achieves the highest HitRate@10, demonstrating that genre-preference matching at onboarding is an effective practical strategy for new users. The **3.2× gap** between surrogate strategies (NDCG ≈ 0.055) and full LightGCN (NDCG = 0.178) quantifies the cold-start bottleneck and motivates richer preference elicitation during user onboarding.
+
+## Pretrained Checkpoints & Extended Experiment Artifacts
+
+Additional pretrained checkpoints generated during the early-stopping sensitivity experiments are available on Google Drive:
+
+https://drive.google.com/drive/u/0/folders/14hRvIJD27Bs4Q3uVpWQuMKPNoUSp9Y2e
+
+The Drive folder contains:
+- MF, NGCF, and LightGCN checkpoints
+- Early stopping configurations with:
+  - patience = 3
+  - patience = 5
+  - patience = 10
+  - patience = 20
+- Additional outputs used for the patience sensitivity analysis
+
+These files are provided to improve reproducibility and allow experiments to be reproduced without rerunning the full training pipeline.
